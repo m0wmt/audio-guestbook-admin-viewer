@@ -21,21 +21,15 @@ Build options:
 
 #include <Arduino_GFX_Library.h>
 #include <ESP32Time.h>
-//#include <TFT_eSPI.h>
 
 #include "lvgl.h"
-//#include "lcd_bsp.h"
 
 #include <WiFi.h>
 #include <esp_now.h>
 
 #include <Wire.h>
 //#include "XPowersLib.h"
-// #include "bigFont.h"
-// #include "middleFont.h"
-// #include "smallFont.h"
-// #include "valueFont.h"
-// #include "FreeMono8pt7b.h"
+
 
 #include "driver/i2c.h"
 #include "esp_err.h"
