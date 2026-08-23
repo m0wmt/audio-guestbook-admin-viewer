@@ -30,7 +30,6 @@ Build options:
 #include <Wire.h>
 //#include "XPowersLib.h"
 
-
 #include "driver/i2c.h"
 #include "esp_err.h"
 
@@ -88,18 +87,8 @@ Arduino_CO5300 *gfx = new Arduino_CO5300(
   6, 0, 0, 0
 );
 
-
-// int n=0;
-// int xt = 0, yt = 0;
-
-
 #define BUTTON 0
 
-// unsigned short grays[13];
-// #define red  0xD041
-// #define blue 0x0105
-// //#define bck TFT_BLACK
-// char dd[7]={'r','u','n','t','i','m','e'};
 
 // ESP-NOW message
 typedef struct struct_message {
@@ -107,20 +96,20 @@ typedef struct struct_message {
   float disk_space;
 } struct_message;
 
-
 // PMK and LMK keys, must be the same both sides
 static const char* PMK_KEY_STR = PMK
 static const char* LMK_KEY_STR = LMK
 
 // End ESP-NOW
 
-// LVGL
+// LVGL functions
 void my_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p);
+void lv_draw_display (void);
 void lv_vertical_line (void);
 void lv_application_name (void);
 void lv_demo_data (void);
 
-    // 1. Define screen resolution
+// 1. Define screen resolution
 static const uint16_t screenWidth  = 466;
 static const uint16_t screenHeight = 466;
 
@@ -178,9 +167,6 @@ void setup() {
     // Setting the master device LMK key
     memcpy(peerInfo.lmk, LMK_KEY_STR, 16); 
 
-    // for (uint8_t i = 0; i < 16; i++) {
-    //     peerInfo.lmk[i] = LMK_KEY_STR[i];
-    // }
     // Set encryption to true
     peerInfo.encrypt = true;
     
@@ -201,7 +187,7 @@ void setup() {
     // sprite.createSprite(400,240);
     
 
-
+    // Set up display
     if (!gfx->begin()) {
         Serial.println("Display Init Failed!");
     }
@@ -235,39 +221,11 @@ void setup() {
     lv_obj_t * scr = lv_scr_act();
 	lv_obj_set_style_bg_color(scr, lv_palette_main(LV_PALETTE_NONE), LV_PART_MAIN);
 
-    /* 1. Status */
-    lv_obj_t * label1 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label1, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label1, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label1, "Status");
-    lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 210, 35);
+    // Draw the main parts of the display that will not change
+    lv_draw_display();
 
-    /* 2. Recordings */
-    lv_obj_t * label2 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label2, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label2, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label2, "Recordings");
-    lv_obj_align(label2, LV_ALIGN_TOP_LEFT, 210, 140);
-
-    /* 3. Disk Space */
-    lv_obj_t * label3 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label3, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label3, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label3, "Disk Space");
-    lv_obj_align(label3, LV_ALIGN_TOP_LEFT, 210, 245);
-
-    /* 2. Up Time */
-    lv_obj_t * label4 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label4, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label4, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label4, "Up Time");
-    lv_obj_align(label4, LV_ALIGN_TOP_LEFT, 210, 350);
-    
+    // Show some demo data for now
     lv_demo_data();
-
-    lv_vertical_line();
-
-    lv_application_name();
 }
 
 
@@ -395,6 +353,40 @@ void my_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *c
     #endif // #ifndef DIRECT_RENDER_MODE
 
     lv_disp_flush_ready(disp_drv);
+}
+
+void lv_draw_display (void) {
+    /* 1. Status */
+    lv_obj_t * label1 = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(label1, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label1, &lv_font_montserrat_34, LV_PART_MAIN);
+    lv_label_set_text(label1, "Status");
+    lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 210, 35);
+
+    /* 2. Recordings */
+    lv_obj_t * label2 = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(label2, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label2, &lv_font_montserrat_34, LV_PART_MAIN);
+    lv_label_set_text(label2, "Recordings");
+    lv_obj_align(label2, LV_ALIGN_TOP_LEFT, 210, 140);
+
+    /* 3. Disk Space */
+    lv_obj_t * label3 = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(label3, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label3, &lv_font_montserrat_34, LV_PART_MAIN);
+    lv_label_set_text(label3, "Disk Space");
+    lv_obj_align(label3, LV_ALIGN_TOP_LEFT, 210, 245);
+
+    /* 2. Up Time */
+    lv_obj_t * label4 = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(label4, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_text_font(label4, &lv_font_montserrat_34, LV_PART_MAIN);
+    lv_label_set_text(label4, "Up Time");
+    lv_obj_align(label4, LV_ALIGN_TOP_LEFT, 210, 350);
+    
+    lv_vertical_line();
+
+    lv_application_name();
 }
 
 void lv_application_name (void) {
