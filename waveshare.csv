@@ -1,0 +1,9 @@
+# ESP-IDF Partition Table - https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.43C/blob/main/02_Example/espidf_v5.5.3/05_LVGL_V8_Test/partitions.csv
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, 0x9000, 0x4000,
+otadata, data, ota, 0xd000, 0x2000,
+phy_init, data, phy, 0xf000, 0x1000,
+#No OTA
+#ota_0, app, ota_0, 0x10000, 4M,
+#ota_1, app, ota_1, , 1M,
+storage, data, spiffs, , 2M,
