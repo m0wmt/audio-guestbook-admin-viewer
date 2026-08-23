@@ -151,8 +151,6 @@ typedef struct struct_message {
   float disk_space;
 } struct_message;
 
-// Masters's MAC address
-uint8_t masterMac[] = {0xE0, 0x72, 0xA1, 0xE7, 0xE2, 0x98};
 
 // PMK and LMK keys, must be the same both sides
 static const char* PMK_KEY_STR = PMK
