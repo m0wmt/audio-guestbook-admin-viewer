@@ -4,6 +4,9 @@
 //https://github.com/moononournation/Arduino_GFX/blob/master/examples/LVGL/LvglBenchmark/LvglBenchmark.ino
 //https://github.com/moononournation/Arduino_GFX/blob/master/examples/LVGL/LVGL_Arduino_v9/LVGL_Arduino_v9.ino
 
+// TODO: Watch to create task for each item
+//https://www.youtube.com/watch?v=g9j8FfF2GJ8&t=273s
+
 /*
 Build options:
     Select board ESP32S3 Dev Module
@@ -19,44 +22,43 @@ Build options:
 
 #include "pins_config.h"
 
-#include <Arduino_GFX_Library.h>
-#include <ESP32Time.h>
+#include <TFT_eSPI.h>
+#include "Free_Fonts.h" // Include the header file attached to this sketch
 
-#include "lvgl.h"
+#include <Arduino_GFX_Library.h>
 
 #include <WiFi.h>
 #include <esp_now.h>
 
 #include <Wire.h>
-//#include "XPowersLib.h"
 
-#include "driver/i2c.h"
-#include "esp_err.h"
 
 void draw(void);
 bool getRawTouch(int &x, int &y);
 void processTouch(void);
-void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len);
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len);
+static void updateStatus(const uint8_t mode);
 
-// Replace with own time routines
-ESP32Time rtc(0); 
+// Used only to create sprite for GFX library to draw
+TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite sprite = TFT_eSprite(&tft);
 
-// ==== LCD PINS ====
-#define LCD_SDIO0 11    // From pins_config.h - works :-)
-#define LCD_SDIO1 12
-#define LCD_SDIO2 13
-#define LCD_SDIO3 14
-#define LCD_SCLK  10
-#define LCD_RESET 21
-#define LCD_CS    9
+// // ==== LCD PINS ====
+// #define LCD_SDIO0 11    // From pins_config.h - works :-)
+// #define LCD_SDIO1 12
+// #define LCD_SDIO2 13
+// #define LCD_SDIO3 14
+// #define LCD_SCLK  10
+// #define LCD_RESET 21
+// #define LCD_CS    9
 
-#define LCD_WIDTH  466
-#define LCD_HEIGHT 466
+// #define LCD_WIDTH  466
+// #define LCD_HEIGHT 466
 
-// ==== TOUCH (I2C) ====
-#define IIC_SDA 47  // pins_config and bsp_config
-#define IIC_SCL 48
-#define FT3168_I2C_ADDRESS 0x38
+// // ==== TOUCH (I2C) ====
+// #define IIC_SDA 47  // pins_config and bsp_config
+// #define IIC_SCL 48
+// #define FT3168_I2C_ADDRESS 0x38
 
 // Touch Screen
 const int SWIPE_THRESHOLD = 40;     // Minimum pixels moved to count as a swipe
@@ -90,11 +92,27 @@ Arduino_CO5300 *gfx = new Arduino_CO5300(
 #define BUTTON 0
 
 
+typedef enum { // State/mode of the audio guestbook
+    ERROR,
+    INITIALISING,
+    READY,
+    RECORDMESSAGEPROMPT,
+    RECORDING,
+    PLAYING,
+    LEFT_OFF_HOOK
+} button_mode_t;
+
 // ESP-NOW message
 typedef struct struct_message {
-  uint16_t recordings;
-  float disk_space;
+    uint8_t mode;
+    uint16_t recordings;
+    uint64_t disk_space;
+    unsigned long last_time;
 } struct_message;
+
+struct_message myData = {INITIALISING, 0, 0, 0};
+
+char status[24];
 
 // PMK and LMK keys, must be the same both sides
 static const char* PMK_KEY_STR = PMK
@@ -102,20 +120,8 @@ static const char* LMK_KEY_STR = LMK
 
 // End ESP-NOW
 
-// LVGL functions
-void my_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p);
-void lv_draw_display (void);
-void lv_vertical_line (void);
-void lv_application_name (void);
-void lv_demo_data (void);
-
-// 1. Define screen resolution
-static const uint16_t screenWidth  = 466;
-static const uint16_t screenHeight = 466;
-
-// 2. Allocate buffer memory for LVGL rendering
-static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf[screenWidth * 10]; 
+#define TFT_TEAL 0x008080
+#define OFF_WHITE 0xD3D3D3
 
 void setup() {
     Serial.begin(115200);
@@ -179,20 +185,21 @@ void setup() {
     Serial.println("ESP-NOW receiver ready");    
 
     // Register receive callback
-    esp_now_register_recv_cb(OnDataRecv);
+    esp_now_register_recv_cb(onDataRecv);
 
 
     pinMode(BUTTON, INPUT_PULLUP); 
-    rtc.setTime(0,0,0,10,23,2026,0); 
-    // sprite.createSprite(400,240);
     
+    sprite.createSprite(466,466);
+    
+    memset(status, '\0', sizeof(status));
 
     // Set up display
     if (!gfx->begin()) {
         Serial.println("Display Init Failed!");
     }
 
-    gfx->setBrightness(140);
+    gfx->setBrightness(100);
     gfx->fillScreen(RGB565_TEAL);
     delay(1000);
     gfx->fillScreen(RGB565_BLACK);
@@ -201,47 +208,70 @@ void setup() {
     Wire.setPins(IIC_SDA, IIC_SCL);
     Wire.begin();
 
-    Serial.println("Initialising LVGL...");
-
-    lv_init();
-    lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 10);
-
-    /* Initialize the display driver */
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = screenWidth;
-    disp_drv.ver_res = screenHeight;
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    disp_drv.sw_rotate = 1;                 // Rotate the display
-    disp_drv.rotated = LV_DISP_ROT_270;
-    lv_disp_drv_register(&disp_drv);
-    
-    // Set background colour
-    lv_obj_t * scr = lv_scr_act();
-	lv_obj_set_style_bg_color(scr, lv_palette_main(LV_PALETTE_NONE), LV_PART_MAIN);
-
-    // Draw the main parts of the display that will not change
-    lv_draw_display();
-
-    // Show some demo data for now
-    lv_demo_data();
+    draw();
 }
 
 
 void loop() {
-    static uint32_t del_time = 0;
-    for (;;) {
-        del_time = lv_timer_handler();
-        vTaskDelay(pdMS_TO_TICKS(del_time));
-    }    
+
    
     // processTouch();
     // delay(10);
 }
 
 void draw(void) {
+    sprite.fillSprite(0);
+    sprite.fillRoundRect(177, 6, 6, 460, 4, RGB565_WHITE);
+    
+    // sprite.loadFont(valueFont);
+    sprite.setFreeFont(FSB24);     
+    sprite.setTextColor(RGB565_TEAL);
+    sprite.drawString("Audio", 23, 140);
+    sprite.drawString("Guest", 33, 200);
+    sprite.drawString("Book", 43, 260);
+    sprite.unloadFont();
 
+    sprite.setFreeFont(FSSB18);
+    sprite.setTextColor(RGB565_WHITE);
+    sprite.drawString("Status", 207, 30);
+    sprite.drawString("Recordings", 207, 140);
+    sprite.drawString("Disk Space", 207, 255);
+    sprite.drawString("Up Time", 207, 365);
+    sprite.unloadFont();
+
+    // sprite.loadFont(middleFont);
+    sprite.setFreeFont(FSS18);     
+    sprite.setTextColor(RGB565_LIGHTGREY);
+
+    updateStatus(myData.mode);
+    sprite.drawString(status, 207, 70);
+    memset(status, '\0', sizeof(status));
+
+    char recordings_buffer[10];
+    sprintf(recordings_buffer, "%u", myData.recordings);
+    sprite.drawString(recordings_buffer, 207, 180);
+
+    uint64_t bytes = myData.disk_space;
+    double humanBytes;
+    int i = 0;
+	char *suffix[] = {"B", "KB", "MB", "GB", "TB"};
+    char length = sizeof(suffix) / sizeof(suffix[0]);
+    if (myData.disk_space > 1024) {
+		for (i = 0; (bytes / 1024) > 0 && i<length-1; i++, bytes /= 1024)
+			humanBytes = bytes / 1024.0;
+    }
+
+    char diskspace_buffer[25];
+    sprintf(diskspace_buffer, "%.02lf %s", humanBytes, suffix[i]);
+    sprite.drawString(diskspace_buffer, 207, 295);
+
+    char uptime_buffer[10];
+    sprintf(uptime_buffer, "%02d:%02d:%02d", (myData.last_time / 1000) / 3600, ((myData.last_time / 1000) % 3600) / 60,
+            ((myData.last_time / 1000) % 3600) % 60);
+    sprite.drawString(uptime_buffer, 207, 405);
+    sprite.unloadFont();
+
+    gfx->draw16bitBeRGBBitmap(0, 0, (uint16_t*)sprite.getPointer(), 466, 466);  
 }
 
 // Read touch screen
@@ -332,131 +362,57 @@ void processTouch(void) {
 }
 
 /**
- * Recieve data from ESP-NOW server callback
+ * Recieve data from ESP-NOW server callback and update the display
  */
-void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
     struct_message *data = (struct_message *)incomingData;
-    Serial.printf("Data received: counter=%d, temp=%.2f\n", data->recordings, data->disk_space);
-}
+    Serial.printf("Data received: recordings=%u, disk_space=%llu\n", data->recordings, data->disk_space);
+    Serial.printf("Data received: mode=%d, last_time=%lu\n", data->mode, data->last_time);
 
-/* Display flushing callback: Copies LVGL's internal buffer to your screen */
-void my_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
-    #ifndef DIRECT_RENDER_MODE
-        uint32_t w = (area->x2 - area->x1 + 1);
-        uint32_t h = (area->y2 - area->y1 + 1);
+    myData.disk_space = data->disk_space;
+    myData.last_time = data->last_time;
+    myData.mode = data->mode;
+    myData.recordings = data->recordings;
 
-        #if (LV_COLOR_16_SWAP != 0)
-            gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t *)&color_p->full, w, h);
-        #else
-            gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)&color_p->full, w, h);
-        #endif
-    #endif // #ifndef DIRECT_RENDER_MODE
-
-    lv_disp_flush_ready(disp_drv);
-}
-
-void lv_draw_display (void) {
-    /* 1. Status */
-    lv_obj_t * label1 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label1, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label1, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label1, "Status");
-    lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 210, 35);
-
-    /* 2. Recordings */
-    lv_obj_t * label2 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label2, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label2, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label2, "Recordings");
-    lv_obj_align(label2, LV_ALIGN_TOP_LEFT, 210, 140);
-
-    /* 3. Disk Space */
-    lv_obj_t * label3 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label3, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label3, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label3, "Disk Space");
-    lv_obj_align(label3, LV_ALIGN_TOP_LEFT, 210, 245);
-
-    /* 2. Up Time */
-    lv_obj_t * label4 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label4, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label4, &lv_font_montserrat_34, LV_PART_MAIN);
-    lv_label_set_text(label4, "Up Time");
-    lv_obj_align(label4, LV_ALIGN_TOP_LEFT, 210, 350);
-    
-    lv_vertical_line();
-
-    lv_application_name();
-}
-
-void lv_application_name (void) {
-    lv_obj_t * app_name = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(app_name, lv_color_hex(0x008080), LV_PART_MAIN);
-    lv_obj_set_style_text_font(app_name, &lv_font_montserrat_38, LV_PART_MAIN);
-    lv_label_set_text(app_name, "Audio");
-    lv_obj_align(app_name, LV_ALIGN_TOP_LEFT, 30, 150);
-
-    lv_obj_t * app_name1 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(app_name1, lv_color_hex(0x008080), LV_PART_MAIN);
-    lv_obj_set_style_text_font(app_name1, &lv_font_montserrat_38, LV_PART_MAIN);
-    lv_label_set_text(app_name1, "Guest");
-    lv_obj_align(app_name1, LV_ALIGN_TOP_LEFT, 35, 195);
-
-    lv_obj_t * app_name2 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(app_name2, lv_color_hex(0x008080), LV_PART_MAIN);
-    lv_obj_set_style_text_font(app_name2, &lv_font_montserrat_38, LV_PART_MAIN);
-    lv_label_set_text(app_name2, "Book");
-    lv_obj_align(app_name2, LV_ALIGN_TOP_LEFT, 40, 240);
+    draw();
 }
 
 
-void lv_vertical_line (void) {
-    /*Create an array for the points of the line*/
-    static lv_point_t line_points[] = { {180, 36}, {180, 430} };
+/**
+ * @brief 
+ */
+ static void updateStatus(const uint8_t mode) {
+    switch (mode) {
+        case ERROR:
+            sprintf(status, "Error");
+            break;
 
-    /*Create style*/
-    static lv_style_t style_line;
-    lv_style_init(&style_line);
-    lv_style_set_line_width(&style_line, 8);
-    //lv_style_set_line_color(&style_line, lv_palette_main(LV_PALETTE_TEAL));
-    lv_style_set_line_color(&style_line, lv_color_hex(0xFFFFFF));
-    lv_style_set_line_rounded(&style_line, true);
+        case INITIALISING:
+            sprintf(status, "Initialising");
+            break;
 
-    /*Create a line and apply the new style*/
-    lv_obj_t * line1;
-    line1 = lv_line_create(lv_scr_act());
-    lv_line_set_points(line1, line_points, 2);     /*Set the points*/
-    lv_obj_add_style(line1, &style_line, 0);
-    
-    //lv_obj_center(line1);
-}
+        case READY:
+            sprintf(status, "Ready");
+            break;
 
-void lv_demo_data (void) {
-    /* 1. Status */
-    lv_obj_t * label1 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label1, lv_color_hex(0xD3D3D3), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label1, &lv_font_montserrat_26, LV_PART_MAIN);
-    lv_label_set_text(label1, "Ready");
-    lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 210, 80); // 45 down
+        case RECORDMESSAGEPROMPT:
+            sprintf(status, "Record Prompt");
+            break;
 
-    /* 2. Recordings */
-    lv_obj_t * label2 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label2, lv_color_hex(0xD3D3D3), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label2, &lv_font_montserrat_26, LV_PART_MAIN);
-    lv_label_set_text(label2, "3");
-    lv_obj_align(label2, LV_ALIGN_TOP_LEFT, 210, 185);
+        case RECORDING:
+            sprintf(status, "Recording");
+            break;
 
-    /* 3. Disk Space */
-    lv_obj_t * label3 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label3, lv_color_hex(0xD3D3D3), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label3, &lv_font_montserrat_26, LV_PART_MAIN);
-    lv_label_set_text(label3, "14.82 GB");
-    lv_obj_align(label3, LV_ALIGN_TOP_LEFT, 210, 290);
+        case PLAYING:
+            sprintf(status, "Playing");
+            break;
 
-    /* 2. Up Time */
-    lv_obj_t * label4 = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(label4, lv_color_hex(0xD3D3D3), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label4, &lv_font_montserrat_26, LV_PART_MAIN);
-    lv_label_set_text(label4, "01:32:21");
-    lv_obj_align(label4, LV_ALIGN_TOP_LEFT, 210, 395);
+        case LEFT_OFF_HOOK:
+            sprintf(status, "Off The Hook!");
+            break;
+
+        default:
+            sprintf(status, "Undefined!");
+            break;
+    }
 }
