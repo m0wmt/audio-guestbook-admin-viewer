@@ -189,6 +189,10 @@ void setup() {
 
 
     pinMode(BUTTON, INPUT_PULLUP); 
+
+    // Turn off led's to save power
+    // digitalWrite(9, LOW);
+    // digitalWrite(11, LOW);
     
     sprite.createSprite(466,466);
     
