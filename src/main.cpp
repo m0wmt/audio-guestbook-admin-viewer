@@ -32,33 +32,18 @@ Build options:
 
 #include <Wire.h>
 
+#include <driver/i2c.h>
 
 void draw(void);
 bool getRawTouch(int &x, int &y);
 void processTouch(void);
 void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len);
 static void updateStatus(const uint8_t mode);
+void drawClock(void);
 
 // Used only to create sprite for GFX library to draw
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
-
-// // ==== LCD PINS ====
-// #define LCD_SDIO0 11    // From pins_config.h - works :-)
-// #define LCD_SDIO1 12
-// #define LCD_SDIO2 13
-// #define LCD_SDIO3 14
-// #define LCD_SCLK  10
-// #define LCD_RESET 21
-// #define LCD_CS    9
-
-// #define LCD_WIDTH  466
-// #define LCD_HEIGHT 466
-
-// // ==== TOUCH (I2C) ====
-// #define IIC_SDA 47  // pins_config and bsp_config
-// #define IIC_SCL 48
-// #define FT3168_I2C_ADDRESS 0x38
 
 // Touch Screen
 const int SWIPE_THRESHOLD = 40;     // Minimum pixels moved to count as a swipe
@@ -68,6 +53,8 @@ int touchStartX = 0;
 int touchStartY = 0;
 unsigned long touchStartTime = 0;
 bool isTouching = false;
+
+volatile bool touchPending = false;
 
 // // ==== DISPLAY BUS ====
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
@@ -122,6 +109,13 @@ static const char* LMK_KEY_STR = LMK
 
 #define TFT_TEAL 0x008080
 #define OFF_WHITE 0xD3D3D3
+
+
+// Set only a flag in the ISR. Perform the I2C transaction in the main loop.
+// void IRAM_ATTR onTouchInterrupt() {
+//   touchPending = true;
+//   Serial.println("touched");
+// }
 
 void setup() {
     Serial.begin(115200);
@@ -190,10 +184,6 @@ void setup() {
 
     pinMode(BUTTON, INPUT_PULLUP); 
 
-    // Turn off led's to save power
-    // digitalWrite(9, LOW);
-    // digitalWrite(11, LOW);
-    
     sprite.createSprite(466,466);
     
     memset(status, '\0', sizeof(status));
@@ -212,7 +202,16 @@ void setup() {
     Wire.setPins(IIC_SDA, IIC_SCL);
     Wire.begin();
 
-    draw();
+    // uint8_t data = 0x00;
+    // I2C_writr_buff(FT3168_I2C_ADDRESS,0x00,&data,1); //Switch to normal mode
+
+
+    drawClock();    // demo of a different display
+
+  // Configure the interrupt pin for a falling-edge trigger.
+  //pinMode(TOUCH_RST, LOW);
+//   pinMode(TOUCH_INT, INPUT_PULLUP);
+//   attachInterrupt(digitalPinToInterrupt(TOUCH_INT), onTouchInterrupt, FALLING);    
 }
 
 
@@ -222,6 +221,8 @@ void loop() {
     // processTouch();
     // delay(10);
 }
+
+
 
 void draw(void) {
     sprite.fillSprite(0);
@@ -420,3 +421,37 @@ void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
             break;
     }
 }
+
+void drawClock(void) {
+    const int CENTER_X = 233;
+    const int CENTER_Y = 233;
+    const int RADIUS = 233;
+    const int HOUR_LEN = 30;
+    const int MIN_LEN = 40;
+    const int SEC_LEN = 55;    
+
+    sprite.fillSprite(0);
+
+  for (int i = 0; i < 60; i++) {
+    float angle = i * 6 * M_PI / 180.0;
+    int x1 = CENTER_X + (RADIUS - 8) * cos(angle - M_PI / 2);
+    int y1 = CENTER_Y + (RADIUS - 8) * sin(angle - M_PI / 2);
+    int x2 = CENTER_X + (RADIUS - (i % 5 == 0 ? 22 : 14)) * cos(angle - M_PI / 2);
+    int y2 = CENTER_Y + (RADIUS - (i % 5 == 0 ? 22 : 14)) * sin(angle - M_PI / 2);
+    sprite.drawLine(x1, y1, x2, y2, RGB565_WHITE);
+  }
+
+  sprite.setTextColor(RGB565_WHITE, RGB565_BLACK);
+  sprite.setTextSize(2);
+  for (int h = 1; h <= 12; h++) {
+    float angle = (h * 30) * M_PI / 180.0;
+    int tx = CENTER_X + (RADIUS - 38) * cos(angle - M_PI / 2) - 10;
+    int ty = CENTER_Y + (RADIUS - 38) * sin(angle - M_PI / 2) - 8;
+    sprite.setCursor(tx, ty);
+    sprite.print(h);
+  }
+  
+  gfx->draw16bitBeRGBBitmap(0, 0, (uint16_t*)sprite.getPointer(), 466, 466);  
+  sprite.setTextSize(0);
+  
+}    
