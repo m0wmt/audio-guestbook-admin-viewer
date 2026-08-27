@@ -52,9 +52,24 @@ Utilise the display to show status/up time/recordings/disk space of the audio gu
   alt="Board Explanation">
 </figure>
 
+## Screen
+
+Status messages (the main ones) and their meanings:
+- Ready (phone is ready for recording a message)
+- Recording (currently recording a message)
+- Off the Hook (the phone handset has not been replaced properly)
+- Offline (something is wrong with the phone!)
+
+Recordings; number of messages recorded.
+
+Disk Space; this is the amount of space left on the micro SD card in the Teensy.
+
+Up Time; the amount of time the phone has been switched on, not really needed as we have a status message as confirmation all is okay/or not.
 
 ## Notes
 
 Created a esp-now-admin-server to replace the admin-viewer (see audio-guestbook repository) which uses ESP-NOW to send encrypted messages to this board only. Encryption might be over the top but it was easy to implement so why not! 
 
 Have a working viewer now getting messages from the server every minute or when that status changes. Having problems with the touch interface at the moment. I can spam the I2C interface and get finger readings but get underlying software warnings due to changes Espressif did to their library (known problem). Would prefer to use an interrupt but currently can’t get that working from any of the examples I have found in my project :-(
+
+Tidied up the code a bit (more to do), updated this README, and added an Offline status to indicate that there is something wrong with the phone.
