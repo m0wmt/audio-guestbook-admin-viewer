@@ -73,3 +73,5 @@ Created a esp-now-admin-server to replace the admin-viewer (see audio-guestbook 
 Have a working viewer now getting messages from the server every minute or when the status changes (recording a message etc.). Having problems with the touch interface. I can spam the I2C interface and get finger readings but get underlying software warnings due to changes Espressif did to their library (known problem online). Would prefer to use an interrupt but currently can’t get that working from any of the examples I have found :-(. Won’t give up and will keep working on this as I will be reusing this display after the wedding for other projects.
 
 Tidied up the code a bit (more to do), updated this README, and added an Offline status to indicate that there is something wrong with the phone.
+
+When sending a structure from one ESP32 to another using ESP-NOW. ensure that the structure definition on both ESP’s is the same otherwise you’ll read garbage at the receiver.
