@@ -34,12 +34,17 @@ Build options:
 
 #include <driver/i2c.h>
 
+#define DEBUG true      // to turn on/off printf statements
+
 void draw(void);
-bool getRawTouch(int &x, int &y);
-void processTouch(void);
-void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len);
-static void updateStatus(const uint8_t mode);
-void drawClock(void);
+bool get_raw_touch(int &x, int &y);
+void process_touch(void);
+void esp_now_data_recv(const esp_now_recv_info_t *info, const uint8_t *incoming_data, int len);
+static uint16_t update_status(const uint8_t status);
+void draw_clock(void);
+bool gett_touch(uint16_t *x, uint16_t *y, uint8_t *gesture);
+uint8_t i2c_read(uint8_t addr);
+uint8_t i2c_read_continuous(uint8_t addr, uint8_t *data, uint32_t length);
 
 // Used only to create sprite for GFX library to draw
 TFT_eSPI tft = TFT_eSPI();
@@ -76,6 +81,18 @@ Arduino_CO5300 *gfx = new Arduino_CO5300(
   6, 0, 0, 0
 );
 
+enum GESTURE
+{
+    None = 0x00,       
+    SlideDown = 0x08,  
+    SlideUp = 0x04,    
+    SlideLeft = 0x01,  
+    SlideRight = 0x02, 
+    SingleTap = 0x00,  
+    DoubleTap = 0x10,  
+    LongPress = 0x00   
+};
+
 #define BUTTON 0
 
 
@@ -86,20 +103,21 @@ typedef enum { // State/mode of the audio guestbook
     RECORDMESSAGEPROMPT,
     RECORDING,
     PLAYING,
-    LEFT_OFF_HOOK
+    LEFT_OFF_HOOK,
+    OFFLINE
 } button_mode_t;
 
 // ESP-NOW message
-typedef struct struct_message {
-    uint8_t mode;
-    uint16_t recordings;
+typedef struct {
     uint64_t disk_space;
     unsigned long last_time;
-} struct_message;
+    uint16_t recordings;
+    uint8_t status;
+} struct_message_t;
 
-struct_message myData = {INITIALISING, 0, 0, 0};
+struct_message_t esp_now_message = {.disk_space = 0, .last_time = 0, .recordings = 0, .status = OFFLINE};
 
-char status[24];
+char phone_status[24];
 
 // PMK and LMK keys, must be the same both sides
 static const char* PMK_KEY_STR = PMK
@@ -107,29 +125,31 @@ static const char* LMK_KEY_STR = LMK
 
 // End ESP-NOW
 
-#define TFT_TEAL 0x008080
-#define OFF_WHITE 0xD3D3D3
+#define HEARTBEAT 120000                // 2 minutes
+static uint32_t inactive_timer = 0;     // inactivity run time timer
 
 
 // Set only a flag in the ISR. Perform the I2C transaction in the main loop.
-// void IRAM_ATTR onTouchInterrupt() {
-//   touchPending = true;
-//   Serial.println("touched");
-// }
+void IRAM_ATTR on_touch_interrupt() {
+  touchPending = true;
+  Serial.println("touched");
+}
 
 void setup() {
-    Serial.begin(115200);
-    delay(2000);
+    if (DEBUG) {
+        Serial.begin(115200);
+        delay(2000);
 
-    Serial.println("\n##################################");
-    Serial.println(F("ESP32 Information:"));
-    Serial.printf("Core Version %s, SDK Version %s\n", ESP.getCoreVersion(), ESP.getSdkVersion());
-    Serial.printf("Internal Total Heap %d, Internal Used Heap %d, Internal Free Heap %d\n", ESP.getHeapSize(), ESP.getHeapSize()-ESP.getFreeHeap(), ESP.getFreeHeap()); 
-    Serial.printf("Sketch Size %d, Free Sketch Space %d\n", ESP.getSketchSize(), ESP.getFreeSketchSpace()); 
-    Serial.printf("SPIRam Total heap %d, SPIRam Free Heap %d\n", ESP.getPsramSize(), ESP.getFreePsram()); 
-    Serial.printf("Chip Model %s, ChipRevision %d, Cpu Freq %d, SDK Version %s\n", ESP.getChipModel(), ESP.getChipRevision(), ESP.getCpuFreqMHz(), ESP.getSdkVersion()); 
-    Serial.printf("Flash Size %d, Flash Speed %d\n", ESP.getFlashChipSize(), ESP.getFlashChipSpeed());
-    Serial.println("##################################\n");
+        Serial.println("\n##################################");
+        Serial.println(F("ESP32 Information:"));
+        Serial.printf("Core Version %s, SDK Version %s\n", ESP.getCoreVersion(), ESP.getSdkVersion());
+        Serial.printf("Internal Total Heap %d, Internal Used Heap %d, Internal Free Heap %d\n", ESP.getHeapSize(), ESP.getHeapSize()-ESP.getFreeHeap(), ESP.getFreeHeap()); 
+        Serial.printf("Sketch Size %d, Free Sketch Space %d\n", ESP.getSketchSize(), ESP.getFreeSketchSpace()); 
+        Serial.printf("SPIRam Total heap %d, SPIRam Free Heap %d\n", ESP.getPsramSize(), ESP.getFreePsram()); 
+        Serial.printf("Chip Model %s, ChipRevision %d, Cpu Freq %d, SDK Version %s\n", ESP.getChipModel(), ESP.getChipRevision(), ESP.getCpuFreqMHz(), ESP.getSdkVersion()); 
+        Serial.printf("Flash Size %d, Flash Speed %d\n", ESP.getFlashChipSize(), ESP.getFlashChipSpeed());
+        Serial.println("##################################\n");
+    }
 
     /**
         ##################################
@@ -146,12 +166,16 @@ void setup() {
     WiFi.mode(WIFI_STA);
     while (WiFi.status()==WL_STOPPED){}
 
-    Serial.println("=== ESP32 MAC Address ===");
-    Serial.print("STA MAC:  ");
-    Serial.println(WiFi.macAddress());
+    if (DEBUG) {
+        Serial.println("=== ESP32 MAC Address ===");
+        Serial.print("STA MAC:  ");
+        Serial.println(WiFi.macAddress());
+    }
 
     if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW initialization failed");
+        if (DEBUG) {
+            Serial.println("ESP-NOW initialization failed");
+        }
         return;
     }
 
@@ -172,31 +196,84 @@ void setup() {
     
     // Add master as peer       
     if (esp_now_add_peer(&peerInfo) != ESP_OK){
-        Serial.println("Failed to add peer");
+        if (DEBUG) {
+            Serial.println("Failed to add peer");
+        }
         return;
     }    
     
-    Serial.println("ESP-NOW receiver ready");    
+    if (DEBUG) {
+        Serial.println("ESP-NOW receiver ready");    
+    }
 
     // Register receive callback
-    esp_now_register_recv_cb(onDataRecv);
+    esp_now_register_recv_cb(esp_now_data_recv);
 
 
     pinMode(BUTTON, INPUT_PULLUP); 
 
     sprite.createSprite(466,466);
     
-    memset(status, '\0', sizeof(status));
+    memset(phone_status, '\0', sizeof(phone_status));
 
     // Set up display
     if (!gfx->begin()) {
-        Serial.println("Display Init Failed!");
+        if (DEBUG) {
+            Serial.println("Display Init Failed!");
+        }
     }
 
     gfx->setBrightness(100);
     gfx->fillScreen(RGB565_TEAL);
     delay(1000);
     gfx->fillScreen(RGB565_BLACK);
+
+    // //----------------
+    // int8_t _sda, _scl, _rst, _int;    
+    // // FT3168 touch(I2C_SDA, I2C_SCL, TP_RST, TP_INT);
+    // _sda = IIC_SDA;
+    // _scl = IIC_SCL;
+    // _rst = TOUCH_RST;
+    // _int = TOUCH_INT;
+
+    // // Initialize I2C
+    // if (_sda != -1 && _scl != -1)
+    // {
+    //     Wire.setPins(_sda, _scl);
+    //     Wire.begin();
+    //     Serial.println("Wire begin");
+    // }
+    // else
+    // {
+    //     Wire.begin();
+    // }
+
+    // // Int Pin Configuration
+    // if (_int != -1)
+    // {
+    //     pinMode(_int, OUTPUT);
+    //     digitalWrite(_int, HIGH); // 高电平
+    //     delay(1); 
+    //     digitalWrite(_int, LOW); // 低电平
+    //     delay(1);
+    // }
+
+    // // Reset Pin Configuration
+    // if (_rst != -1)
+    // {
+    //     pinMode(_rst, OUTPUT);
+    //     digitalWrite(_rst, LOW);
+    //     delay(10);
+    //     digitalWrite(_rst, HIGH);
+    //     delay(300);
+    // }
+
+    // // Initialize Touch
+    // Wire.beginTransmission(FT3168_I2C_ADDRESS);
+    // Wire.write(0x00);
+    // Wire.write(0x00);
+    // Wire.endTransmission();
+    // //-------------
 
     // Touch screen init
     Wire.setPins(IIC_SDA, IIC_SCL);
@@ -206,23 +283,100 @@ void setup() {
     // I2C_writr_buff(FT3168_I2C_ADDRESS,0x00,&data,1); //Switch to normal mode
 
 
-    drawClock();    // demo of a different display
+    draw();    
 
   // Configure the interrupt pin for a falling-edge trigger.
   //pinMode(TOUCH_RST, LOW);
-//   pinMode(TOUCH_INT, INPUT_PULLUP);
-//   attachInterrupt(digitalPinToInterrupt(TOUCH_INT), onTouchInterrupt, FALLING);    
+  // pinMode(TOUCH_INT, INPUT_PULLUP);
+  // attachInterrupt(digitalPinToInterrupt(TOUCH_INT), onTouchInterrupt, FALLING);    
+
+    inactive_timer = millis();  // start inactivity timer 
 }
 
 
 void loop() {
 
-   
+//   bool touched;
+//   uint8_t gesture;
+//   uint16_t x, y;
+
+//   touched = getTouch(&x, &y, &gesture);
+
+//     if(touched != 0) {
+//         Serial.print("getTouch: "); Serial.println(gesture);
+//     }
+
     // processTouch();
-    // delay(10);
+    // delay(100);
+
+    // Check for audio guestbook admin server binactivity
+    if (millis() >= inactive_timer + HEARTBEAT) {  // We've been inactive for 'n' minutes, show on display
+        // Update the display after setting status=inactive
+        esp_now_message.status = OFFLINE;
+        
+        // Draw screen to show offline
+        draw();
+        
+        // Reset inactive time just in case it come back
+        inactive_timer = millis();
+    }    
 }
 
+bool get_touch(uint16_t *x, uint16_t *y, uint8_t *gesture)
+{
+    bool FingerIndex = false;
+    FingerIndex = (bool)i2c_read(0x02);
+    //Serial.printf("FingerIndex: %d\n",FingerIndex);
+    *gesture = i2c_read(0xD1);
+    // if (!(*gesture == SlideUp || *gesture == SlideDown))
+    // {
+    //     // printf("AA\n");
+    //     *gesture = None;
+    // }
 
+    uint8_t data[4];
+    i2c_read_continuous(0x03, data, 4);
+    *x = ((data[0] & 0x0F) << 8) | data[1];
+    // i2c_read_continuous(0x02, data, 4);
+    // Wire.endTransmission(false);
+    // *y = ((data[2] & 0x0F) << 16) | data[3]; //读取的y值反向
+    *y = ((data[2] & 0x0F) << 8) | data[3];
+
+    // *x = 240 - *x;
+
+    return FingerIndex;
+}
+
+uint8_t i2c_read(uint8_t addr)
+{
+    uint8_t rdData;
+    uint8_t rdDataCount;
+    do
+    {
+        Wire.beginTransmission(FT3168_I2C_ADDRESS);
+        Wire.write(addr);
+        Wire.endTransmission(false); // Restart
+        rdDataCount = Wire.requestFrom(FT3168_I2C_ADDRESS, 1);
+    } while (rdDataCount == 0);
+    while (Wire.available())
+    {
+        rdData = Wire.read();
+    }
+    return rdData;
+}
+
+uint8_t i2c_read_continuous(uint8_t addr, uint8_t *data, uint32_t length)
+{
+    Wire.beginTransmission(FT3168_I2C_ADDRESS);
+    Wire.write(addr);
+    if (Wire.endTransmission(true)) return -1;
+    Wire.requestFrom(FT3168_I2C_ADDRESS, length);
+    for (int i = 0; i < length; i++)
+    {
+        *data++ = Wire.read();
+    }
+    return 0;
+}
 
 void draw(void) {
     sprite.fillSprite(0);
@@ -248,20 +402,24 @@ void draw(void) {
     sprite.setFreeFont(FSS18);     
     sprite.setTextColor(RGB565_LIGHTGREY);
 
-    updateStatus(myData.mode);
-    sprite.drawString(status, 207, 70);
-    memset(status, '\0', sizeof(status));
+    uint16_t status_colour = update_status(esp_now_message.status);
+    sprite.setTextColor(status_colour);
+    sprite.drawString(phone_status, 207, 70);
+    memset(phone_status, '\0', sizeof(phone_status));
+
+    // Reset colour just in case status changed it
+    sprite.setTextColor(RGB565_LIGHTGREY);
 
     char recordings_buffer[10];
-    sprintf(recordings_buffer, "%u", myData.recordings);
+    sprintf(recordings_buffer, "%u", esp_now_message.recordings);
     sprite.drawString(recordings_buffer, 207, 180);
 
-    uint64_t bytes = myData.disk_space;
+    uint64_t bytes = esp_now_message.disk_space;
     double humanBytes;
     int i = 0;
 	char *suffix[] = {"B", "KB", "MB", "GB", "TB"};
     char length = sizeof(suffix) / sizeof(suffix[0]);
-    if (myData.disk_space > 1024) {
+    if (esp_now_message.disk_space > 1024) {
 		for (i = 0; (bytes / 1024) > 0 && i<length-1; i++, bytes /= 1024)
 			humanBytes = bytes / 1024.0;
     }
@@ -271,8 +429,8 @@ void draw(void) {
     sprite.drawString(diskspace_buffer, 207, 295);
 
     char uptime_buffer[10];
-    sprintf(uptime_buffer, "%02d:%02d:%02d", (myData.last_time / 1000) / 3600, ((myData.last_time / 1000) % 3600) / 60,
-            ((myData.last_time / 1000) % 3600) % 60);
+    sprintf(uptime_buffer, "%02d:%02d:%02d", (esp_now_message.last_time / 1000) / 3600, ((esp_now_message.last_time / 1000) % 3600) / 60,
+            ((esp_now_message.last_time / 1000) % 3600) % 60);
     sprite.drawString(uptime_buffer, 207, 405);
     sprite.unloadFont();
 
@@ -280,7 +438,7 @@ void draw(void) {
 }
 
 // Read touch screen
-bool getRawTouch(int &x, int &y) {
+bool get_raw_touch(int &x, int &y) {
     Wire.beginTransmission(FT3168_I2C_ADDRESS);
     Wire.write(0x02); // Touch points status register
     Wire.endTransmission(false);    
@@ -295,7 +453,9 @@ bool getRawTouch(int &x, int &y) {
         if (touch_points > 0) {
             x = ((high_x & 0x0F) << 8) | low_x;
             y = ((high_y & 0x0F) << 8) | low_y;
-            Serial.printf("Touch detected! X: %d, Y: %d\n", x, y);
+            if (DEBUG) {
+                Serial.printf("Touch detected! X: %d, Y: %d\n", x, y);
+            }
 
             return true;
         }
@@ -306,10 +466,10 @@ bool getRawTouch(int &x, int &y) {
 }
 
 // Needs work for when we stop touching the screen!
-void processTouch(void) {
+void process_touch(void) {
     int currentX = 0;
     int currentY = 0;
-    bool currentTouchState = getRawTouch(currentX, currentY);
+    bool currentTouchState = get_raw_touch(currentX, currentY);
 
     // Detect Touch Start (Finger down)
     if (currentTouchState && !isTouching) {
@@ -317,7 +477,9 @@ void processTouch(void) {
         touchStartY = currentY;
         touchStartTime = millis();
         isTouching = true;
-        Serial.printf("Touch Start X: %d, Y: %d\n", currentX, currentY);
+        if (DEBUG) {
+            Serial.printf("Touch Start X: %d, Y: %d\n", currentX, currentY);
+        }
     }
     
     // Detect Touch Release (Finger lifted)
@@ -339,7 +501,9 @@ void processTouch(void) {
         }
         
 
-        Serial.printf("Touch Start X: %d, Y: %d / Touch End X: %d, Y: %d, Distance: %f\n", touchStartX, touchStartY, deltaX, deltaY, distance);
+        if (DEBUG) {
+            Serial.printf("Touch Start X: %d, Y: %d / Touch End X: %d, Y: %d, Distance: %f\n", touchStartX, touchStartY, deltaX, deltaY, distance);
+        }
 
         // Validation Check
         if (distance > SWIPE_THRESHOLD) {
@@ -347,21 +511,31 @@ void processTouch(void) {
             // Check if horizontal movement dominates vertical movement
             if (abs(deltaX) > abs(deltaY)) {
                 if (deltaX > 0) {
-                    Serial.println("GESTURE: Swipe Right");
+                    if (DEBUG) {
+                        Serial.println("GESTURE: Swipe Right");
+                    }
                 } else {
-                    Serial.println("GESTURE: Swipe Left");
+                    if (DEBUG) {
+                        Serial.println("GESTURE: Swipe Left");
+                    }
                 }
             } 
             // Vertical movement dominates
             else {
                 if (deltaY > 0) {
-                    Serial.println("GESTURE: Swipe Down"); // Inverted depending on driver setup
+                    if (DEBUG) {
+                        Serial.println("GESTURE: Swipe Down"); // Inverted depending on driver setup
+                    }
                 } else {
-                    Serial.println("GESTURE: Swipe Up");
+                    if (DEBUG) {
+                        Serial.println("GESTURE: Swipe Up");
+                    }
                 }
             }
         } else if (duration < MAX_TAP_DURATION) {
-            Serial.println("GESTURE: Simple Tap");
+            if (DEBUG) {
+                Serial.println("GESTURE: Simple Tap");
+            }
         }
     }
 }
@@ -369,60 +543,77 @@ void processTouch(void) {
 /**
  * Recieve data from ESP-NOW server callback and update the display
  */
-void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
-    struct_message *data = (struct_message *)incomingData;
-    Serial.printf("Data received: recordings=%u, disk_space=%llu\n", data->recordings, data->disk_space);
-    Serial.printf("Data received: mode=%d, last_time=%lu\n", data->mode, data->last_time);
+void esp_now_data_recv(const esp_now_recv_info_t *info, const uint8_t *incoming_data, int len) {
+    struct_message_t *data = (struct_message_t *)incoming_data;
 
-    myData.disk_space = data->disk_space;
-    myData.last_time = data->last_time;
-    myData.mode = data->mode;
-    myData.recordings = data->recordings;
+    if (DEBUG) {
+        Serial.printf("Data received: recordings=%u, disk_space=%llu\n", data->recordings, data->disk_space);
+        Serial.printf("Data received: mode=%d, last_time=%lu\n", data->status, data->last_time);
+    }
+
+    esp_now_message.disk_space = data->disk_space;
+    esp_now_message.last_time = data->last_time;
+    esp_now_message.status = data->status;
+    esp_now_message.recordings = data->recordings;
 
     draw();
+
+    // When we get a message from the phone reset the inactive_timer to now
+    inactive_timer = millis();    
 }
 
 
 /**
  * @brief 
  */
- static void updateStatus(const uint8_t mode) {
-    switch (mode) {
+ static uint16_t update_status(const uint8_t status) {
+    uint16_t status_colour = RGB565_LIGHTGREY;
+
+    switch (status) {
         case ERROR:
-            sprintf(status, "Error");
+            sprintf(phone_status, "Error");
             break;
 
         case INITIALISING:
-            sprintf(status, "Initialising");
+            sprintf(phone_status, "Initialising");
             break;
 
         case READY:
-            sprintf(status, "Ready");
+            sprintf(phone_status, "Ready");
             break;
 
         case RECORDMESSAGEPROMPT:
-            sprintf(status, "Record Prompt");
+            sprintf(phone_status, "Record Prompt");
             break;
 
         case RECORDING:
-            sprintf(status, "Recording");
+            sprintf(phone_status, "Recording");
+            status_colour = RGB565_GREEN;
             break;
 
         case PLAYING:
-            sprintf(status, "Playing");
+            sprintf(phone_status, "Playing");
             break;
 
         case LEFT_OFF_HOOK:
-            sprintf(status, "Off The Hook!");
+            sprintf(phone_status, "Off The Hook");
+            status_colour = RGB565_ORANGE;
+            break;
+
+        case OFFLINE:
+            sprintf(phone_status, "Offline");
+            status_colour = RGB565_RED;
             break;
 
         default:
-            sprintf(status, "Undefined!");
+            sprintf(phone_status, "Undefined!");
             break;
     }
+
+    return status_colour;
 }
 
-void drawClock(void) {
+void draw_clock(void) {
     const int CENTER_X = 233;
     const int CENTER_Y = 233;
     const int RADIUS = 233;
@@ -453,5 +644,4 @@ void drawClock(void) {
   
   gfx->draw16bitBeRGBBitmap(0, 0, (uint16_t*)sprite.getPointer(), 466, 466);  
   sprite.setTextSize(0);
-  
 }    

@@ -25,7 +25,7 @@
 #define IIC_SCL 48
 #define FT3168_I2C_ADDRESS 0x38
 #define TOUCH_INT GPIO_NUM_17
-#define TOUCH_RST GPIO_NUM_16
+#define TOUCH_RST -1
 
 // Battery Voltage ADC
 #define BATTERY_VOLTAGE_ADC_DATA 4
