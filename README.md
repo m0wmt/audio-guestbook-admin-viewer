@@ -11,14 +11,6 @@ I am using the Waveshare round AMOLED 1.43” display along with; ESP-NOW, Ardui
 
 Utilise the display to show status/up time/recordings/disk space of the audio guestbook application. I do have a webpage admin viwer (see audio-guestbook repository) but that would have meant looking at the phone all the time. With this I can put it on the table (have designed and 3D printed a stand for it) and forget about it. It will be powered by a battery pack (Anker Powercore 10,000 mAh) for the duration of the wedding.
 
-
-The goal of this repository is to demonstrate features or applications:
-- Bring the board up cleanly in **PlatformIO**
-- Initialize the AMOLED display (SH8601 / CO5300)
-- Enable **FT3168 capacitive touch**
-- Enable **buttons** for user actions, not version 1
-- Serve as a stable foundation for future projects
-
 ## Hardware
 
 - **Board:** Waveshare ESP32-S3 Touch AMOLED 1.43"
