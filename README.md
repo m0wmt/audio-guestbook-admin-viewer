@@ -1,6 +1,6 @@
 # Audio Guestbook Admin Viewer
 
-This is a admin viewer for the audio guestbook application project which will be recording messages for the bride and groom at an upcoming family wedding.
+This is a admin viewer for the audio guestbook application project (see audio guestbook repository) which will be recording messages for the bride and groom at an upcoming family wedding.
 
 I am using the Waveshare round AMOLED 1.43” display along with; ESP-NOW, Arduino_GFX_library & TFT_eSPI (graphics), Platformio, and VSCode for the IDE.
 
@@ -21,7 +21,7 @@ Utilise the display to show status/up time/recordings/disk space of the audio gu
 ## Pictures
 
 <figure>
-  <figcaption>Project Screenshop</figcaption>
+  <figcaption>Project Screenshot</figcaption>
   <img
   src="./docs/display.jpeg"
   style="width: 400px;" 
