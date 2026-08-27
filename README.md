@@ -1,14 +1,16 @@
-# Waveshare ESP32-S3 AMOLED 1.43"
+# Audio Guestbook Admin Viewer
 
-Project using the Waveshare round AMOLED 1.43” display.
+This is a admin viewer for the audio guestbook application project which will be recording messages for the bride and groom at an upcoming family wedding.
+
+I am using the Waveshare round AMOLED 1.43” display along with; ESP-NOW, Arduino_GFX_library & TFT_eSPI (graphics), Platformio, and VSCode for the IDE.
 
 - Product information: https://www.waveshare.com/esp32-s3-touch-amoled-1.43.htm
 - Waveshare wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.43
 
-
 ## Project Goals
 
-This project will use **PlatformIO** toolset for development
+Utilise the display to show status/up time/recordings/disk space of the audio guestbook application. I do have a webpage admin viwer (see audio-guestbook repository) but that would have meant looking at the phone all the time. With this I can put it on the table (have designed and 3D printed a stand for it) and forget about it. It will be powered by a battery pack (Anker Powercore 10,000 mAh) for the duration of the wedding.
+
 
 The goal of this repository is to demonstrate features or applications:
 - Bring the board up cleanly in **PlatformIO**
@@ -17,12 +19,6 @@ The goal of this repository is to demonstrate features or applications:
 - Enable **buttons** for user actions, not version 1
 - Serve as a stable foundation for future projects
 
-Display:
-- Monitor Audio Guestbook Status
-- Nice clock
-- Customisation (brightness, colours etc.)
-
-
 ## Hardware
 
 - **Board:** Waveshare ESP32-S3 Touch AMOLED 1.43"
@@ -30,12 +26,9 @@ Display:
 - **Touch Controller:** FT3168
 - **Interface:** QSPI (display), I²C (touch)
 
-## Software Stack
-
-- **PlatformIO**
-- **Arduino framework (ESP32-S3)**
-
 ## Pictures
+
+Project screenshot to come
 
 ![Board Connections - High Level](./docs/board_connections.png)
 
@@ -43,12 +36,9 @@ Display:
 
 ![Display Ideas](./docs/DisplayIdeas.png)
 
-## Diary
 
-22/8/26: Have a working version with touch though due to Espressif it seems they've broken something to do with i2c as I get the following error; 
+## Notes
 
-116914][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+Created a esp-now-admin-server to replace the admin-viewer (see audio-guestbook repository) which uses ESP-NOW to send encrypted messages to this board only. Encryption might be over the top but it was easy to implement so why not! 
 
-[116925][E][Wire.cpp:532] requestFrom(): i2cWriteReadNonStop returned Error 259
-
-Start ESP-NOW (Espressif wireless protocol) to communicate with the Audio Guestbook admin monitor so I can use this round display to show what's going on instead of a phone. Also need to look at using an Interrupt for the touch display to know something has happened and stop calling a read all the time.
+Have a working viewer now getting messages from the server every minute or when that status changes. Having problems with the touch interface at the moment. I can spam the I2C interface and get finger readings but get underlying software warnings due to changes Espressif did to their library (known problem). Would prefer to use an interrupt but currently can’t get that working from any of the examples I have found in my project :-(
