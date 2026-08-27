@@ -20,13 +20,37 @@ Utilise the display to show status/up time/recordings/disk space of the audio gu
 
 ## Pictures
 
-Project screenshot to come
+<figure>
+  <figcaption>Project Screenshop</figcaption>
+  <img
+  src="./docs/display.jpeg"
+  style="width: 400px;" 
+  alt="Project Screenshot">
+</figure>
 
-![Board Connections - High Level](./docs/board_connections.png)
+<figure>
+  <figcaption>Board Connections - High Level</figcaption>
+  <img
+  src="./docs/board_connections.png"
+  style="width: 400px;" 
+  alt="Board Connections - High Level">
+</figure>
 
-![Board Explanation](./docs/display_back.png)
+<figure>
+  <figcaption>Board Explanation</figcaption>
+  <img
+  src="./docs/display_back.png"
+  style="width: 400px;" 
+  alt="Board Explanation">
+</figure>
 
-![Display Ideas](./docs/DisplayIdeas.png)
+<figure>
+  <figcaption>Display Ideas</figcaption>
+  <img
+  src="./docs/DisplayIdeas.png"
+  style="width: 400px;" 
+  alt="Board Explanation">
+</figure>
 
 
 ## Notes
