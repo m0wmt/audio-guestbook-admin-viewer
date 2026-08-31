@@ -36,7 +36,8 @@ Build options:
 
 #define DEBUG false      // to turn on/off printf statements
 
-void draw(void);
+void draw_logo(void);
+void draw_display(void);
 void esp_now_data_recv(const esp_now_recv_info_t *info, const uint8_t *incoming_data, int len);
 static uint16_t update_status(const uint8_t status);
 
@@ -129,6 +130,19 @@ void setup() {
         ##################################
     */
 
+    sprite.createSprite(466,466);
+
+    // Set up display
+    if (!gfx->begin()) {
+        if (DEBUG) {
+            Serial.println("Display Init Failed!");
+        }
+    }
+
+    gfx->setBrightness(100);
+    gfx->fillScreen(RGB565_BLACK);
+    draw_logo();
+
     WiFi.mode(WIFI_STA);
     while (WiFi.status()==WL_STOPPED){}
 
@@ -178,27 +192,15 @@ void setup() {
 
     pinMode(BUTTON, INPUT_PULLUP); 
 
-    sprite.createSprite(466,466);
-    
     memset(phone_status, '\0', sizeof(phone_status));
-
-    // Set up display
-    if (!gfx->begin()) {
-        if (DEBUG) {
-            Serial.println("Display Init Failed!");
-        }
-    }
-
-    gfx->setBrightness(100);
-    gfx->fillScreen(RGB565_TEAL);
-    delay(1000);
-    gfx->fillScreen(RGB565_BLACK);
 
     // Touch screen init
     Wire.setPins(IIC_SDA, IIC_SCL);
     Wire.begin();
 
-    draw();    
+    delay(2000);    // small display so we can see the logo :-)
+    
+    draw_display();    
 
     inactive_timer = millis();  // start inactivity timer 
 }
@@ -211,7 +213,7 @@ void loop() {
         esp_now_message.status = OFFLINE;
         
         // Draw screen to show offline
-        draw();
+        draw_display();
         
         // Reset inactive time just in case it come back
         inactive_timer = millis();
@@ -219,9 +221,24 @@ void loop() {
 }
 
 /**
+ * Draw splash-screen at start of program
+ */
+void draw_logo(void) {
+    sprite.fillSprite(0);
+    
+    sprite.setFreeFont(FSB24);     
+    sprite.setTextColor(RGB565_TEAL);
+    sprite.drawString("Audio", 161, 167);
+    sprite.drawString("Guestbook", 123, 250);
+    sprite.unloadFont();
+
+    gfx->draw16bitBeRGBBitmap(0, 0, (uint16_t*)sprite.getPointer(), 466, 466);  
+}
+
+/**
  * @brief Draw the screeen
  */
-void draw(void) {
+void draw_display(void) {
     sprite.fillSprite(0);
     sprite.fillRoundRect(177, 6, 6, 460, 4, RGB565_WHITE);
     
@@ -296,7 +313,7 @@ void esp_now_data_recv(const esp_now_recv_info_t *info, const uint8_t *incoming_
     esp_now_message.status = data->status;
     esp_now_message.recordings = data->recordings;
 
-    draw();
+    draw_display();
 
     // When we get a message from the phone reset the inactive_timer to now
     inactive_timer = millis();    
