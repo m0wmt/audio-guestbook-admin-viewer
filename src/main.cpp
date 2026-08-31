@@ -199,7 +199,7 @@ void setup() {
     Wire.begin();
 
     delay(2000);    // small display so we can see the logo :-)
-    
+
     draw_display();    
 
     inactive_timer = millis();  // start inactivity timer 
@@ -275,7 +275,7 @@ void draw_display(void) {
     sprite.drawString(recordings_buffer, 207, 180);
 
     uint64_t bytes = esp_now_message.disk_space;
-    double humanBytes;
+    double humanBytes = 0;
     int i = 0;
 	char *suffix[] = {"B", "KB", "MB", "GB", "TB"};
     char length = sizeof(suffix) / sizeof(suffix[0]);
