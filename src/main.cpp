@@ -24,6 +24,7 @@ Build options:
 
 #include <TFT_eSPI.h>
 #include "Free_Fonts.h" // Include the header file attached to this sketch
+#include "numbers_font.h" // OpenSans numbers only font.
 
 #include <Arduino_GFX_Library.h>
 
@@ -323,7 +324,7 @@ void draw_recordings(void) {
     const int WIDTH = 38;
     const int START_ANGLE = 80;
     const int END_ANGLE = 280;
-    const int RECORDINGS_Y = 200;
+    const int RECORDINGS_Y = 176;
     int recordings_x = 0;
     int recordings_angle = START_ANGLE;  // no recordings, calculate angle from recordings
 
@@ -378,23 +379,24 @@ void draw_recordings(void) {
     sprite.setCursor(185, 105); sprite.print("Audio");
     sprite.setCursor(142, 150); sprite.print("Guestbook");
 
-    sprite.setTextColor(RGB565_WHITE);
-    sprite.setFreeFont(FM24);
-    sprite.setTextSize(2);
+    sprite.loadFont(NumbersFont);
+    sprite.setTextColor(RGB565_WHITE, RGB565_BLACK); 
 
     sprintf(recordings_buffer, "%u", esp_now_message.recordings);
 
     if (esp_now_message.recordings < 10) {
-        recordings_x = 205;
+        recordings_x = 211;
     } else if (esp_now_message.recordings < 100) {
-        recordings_x = 177;
+        recordings_x = 188;
     } else if (esp_now_message.recordings < 1000) {
-        recordings_x = 149;
+        recordings_x = 165;
     } else {
-        recordings_x = 122;
+        recordings_x = 140;
     }
 
     sprite.drawString(recordings_buffer, recordings_x, RECORDINGS_Y);
+
+    sprite.unloadFont();
 
     // Reset font size
     sprite.setTextSize(0);
